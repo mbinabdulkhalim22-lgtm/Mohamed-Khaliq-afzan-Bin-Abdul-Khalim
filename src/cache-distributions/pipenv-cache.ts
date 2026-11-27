@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as core from '@actions/core';
 
-import CacheDistributor from './cache-distributor.js';
+import CacheDistributor from './cache-distributor';
 
 class PipenvCache extends CacheDistributor {
   constructor(
@@ -32,8 +32,7 @@ class PipenvCache extends CacheDistributor {
 
   protected async computeKeys() {
     const hash = await glob.hashFiles(this.patterns);
-    const osSegment = await this.getLinuxInfoKeySegment();
-    const primaryKey = `${this.CACHE_KEY_PREFIX}-${process.env['RUNNER_OS']}-${process.arch}${osSegment}-python-${this.pythonVersion}-${this.packageManager}-${hash}`;
+    const primaryKey = `${this.CACHE_KEY_PREFIX}-${process.env['RUNNER_OS']}-python-${this.pythonVersion}-${this.packageManager}-${hash}`;
     const restoreKey = undefined;
     return {
       primaryKey,

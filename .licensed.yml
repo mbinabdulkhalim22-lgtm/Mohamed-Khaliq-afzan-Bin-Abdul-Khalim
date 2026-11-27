@@ -1,4 +1,4 @@
-sources:
+ sources:
   npm: true
 
 allowed:
@@ -10,10 +10,6 @@ allowed:
   - cc0-1.0
   - unlicense
   - 0bsd
-  - BlueOak-1.0.0
 
 reviewed:
   npm:
-    - "@actions/http-client"
-    - "balanced-match"
-    - "brace-expansion"
