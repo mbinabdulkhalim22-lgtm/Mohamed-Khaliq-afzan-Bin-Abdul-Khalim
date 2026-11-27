@@ -7,3 +7,11 @@ POST /register
 {
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 }
+POST /login
+{
+  "email": "john@doe.com",
+  "password": "password"
+}
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+}
