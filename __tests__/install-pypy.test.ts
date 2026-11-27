@@ -1,72 +1,20 @@
-import {jest, describe, it, expect, beforeEach, afterEach} from '@jest/globals';
-import {fileURLToPath} from 'url';
 import fs from 'fs';
+
+import {HttpClient} from '@actions/http-client';
+import * as ifm from '@actions/http-client/interfaces';
+import * as tc from '@actions/tool-cache';
+import * as exec from '@actions/exec';
+import * as core from '@actions/core';
 import * as path from 'path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import * as installer from '../src/install-pypy';
+import {
+  IPyPyManifestRelease,
+  IPyPyManifestAsset,
+  IS_WINDOWS
+} from '../src/utils';
 
-// Mock @actions modules
-jest.unstable_mockModule('@actions/core', () => ({
-  info: jest.fn(),
-  warning: jest.fn(),
-  debug: jest.fn(),
-  error: jest.fn(),
-  notice: jest.fn(),
-  setFailed: jest.fn(),
-  setOutput: jest.fn(),
-  getInput: jest.fn(),
-  getBooleanInput: jest.fn(),
-  getMultilineInput: jest.fn(),
-  addPath: jest.fn(),
-  exportVariable: jest.fn(),
-  saveState: jest.fn(),
-  getState: jest.fn(),
-  setSecret: jest.fn(),
-  isDebug: jest.fn(() => false),
-  startGroup: jest.fn(),
-  endGroup: jest.fn(),
-  group: jest.fn((_name: string, fn: () => Promise<unknown>) => fn()),
-  toPlatformPath: jest.fn((p: string) => p),
-  toWin32Path: jest.fn((p: string) => p),
-  toPosixPath: jest.fn((p: string) => p)
-}));
-
-jest.unstable_mockModule('@actions/tool-cache', () => ({
-  find: jest.fn(),
-  findAllVersions: jest.fn(),
-  downloadTool: jest.fn(),
-  extractZip: jest.fn(),
-  extractTar: jest.fn(),
-  extract7z: jest.fn(),
-  extractXar: jest.fn(),
-  cacheDir: jest.fn(),
-  cacheFile: jest.fn(),
-  getManifestFromRepo: jest.fn(),
-  findFromManifest: jest.fn(),
-  evaluateVersions: jest.fn()
-}));
-
-jest.unstable_mockModule('@actions/exec', () => ({
-  exec: jest.fn(),
-  getExecOutput: jest.fn()
-}));
-
-// Dynamic imports after mocking
-const core = await import('@actions/core');
-const tc = await import('@actions/tool-cache');
-const exec = await import('@actions/exec');
-
-// Non-mocked imports
-import {HttpClient} from '@actions/http-client';
-import type * as ifm from '@actions/http-client/lib/interfaces';
-
-const installer = await import('../src/install-pypy.js');
-const utils = await import('../src/utils.js');
-
-import type {IPyPyManifestRelease, IPyPyManifestAsset} from '../src/utils.js';
-import manifestData from './data/pypy.json' with {type: 'json'};
-
-const IS_WINDOWS = utils.IS_WINDOWS;
+import manifestData from './data/pypy.json';
 
 let architecture: string;
 if (IS_WINDOWS) {
@@ -110,18 +58,19 @@ describe('findRelease', () => {
     download_url: `https://test.download.python.org/pypy/pypy3.6-v7.4.0rc1-${extensionName}`
   };
 
-  let infoSpy: jest.Mock;
-  let warningSpy: jest.Mock;
-  let debugSpy: jest.Mock;
+  let getBooleanInputSpy: jest.SpyInstance;
+  let warningSpy: jest.SpyInstance;
+  let debugSpy: jest.SpyInstance;
+  let infoSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    infoSpy = core.info as jest.Mock;
+    infoSpy = jest.spyOn(core, 'info');
     infoSpy.mockImplementation(() => {});
 
-    warningSpy = core.warning as jest.Mock;
+    warningSpy = jest.spyOn(core, 'warning');
     warningSpy.mockImplementation(() => null);
 
-    debugSpy = core.debug as jest.Mock;
+    debugSpy = jest.spyOn(core, 'debug');
     debugSpy.mockImplementation(() => null);
   });
 
@@ -266,62 +215,57 @@ describe('findRelease', () => {
       resolvedPyPyVersion: pypyVersion
     });
   });
-
-  afterEach(() => {
-    jest.resetAllMocks();
-    jest.clearAllMocks();
-    jest.restoreAllMocks();
-  });
 });
 
 describe('installPyPy', () => {
-  let tcFind: jest.Mock;
-  let infoSpy: jest.Mock;
-  let warningSpy: jest.Mock;
-  let debugSpy: jest.Mock;
-  let spyExtractZip: jest.Mock;
-  let spyExtractTar: jest.Mock;
-  let spyFsReadDir: jest.SpiedFunction<typeof fs.readdirSync>;
-  let spyFsWriteFile: jest.SpiedFunction<typeof fs.writeFileSync>;
-  let spyHttpClient: jest.SpiedFunction<typeof HttpClient.prototype.getJson>;
-  let spyExistsSync: jest.SpiedFunction<typeof fs.existsSync>;
-  let spyExec: jest.Mock;
-  let spySymlinkSync: jest.SpiedFunction<typeof fs.symlinkSync>;
-  let spyDownloadTool: jest.Mock;
-  let spyCacheDir: jest.Mock;
-  let spyChmodSync: jest.SpiedFunction<typeof fs.chmodSync>;
+  let tcFind: jest.SpyInstance;
+  let getBooleanInputSpy: jest.SpyInstance;
+  let warningSpy: jest.SpyInstance;
+  let debugSpy: jest.SpyInstance;
+  let infoSpy: jest.SpyInstance;
+  let spyExtractZip: jest.SpyInstance;
+  let spyExtractTar: jest.SpyInstance;
+  let spyFsReadDir: jest.SpyInstance;
+  let spyFsWriteFile: jest.SpyInstance;
+  let spyHttpClient: jest.SpyInstance;
+  let spyExistsSync: jest.SpyInstance;
+  let spyExec: jest.SpyInstance;
+  let spySymlinkSync: jest.SpyInstance;
+  let spyDownloadTool: jest.SpyInstance;
+  let spyCacheDir: jest.SpyInstance;
+  let spyChmodSync: jest.SpyInstance;
 
   beforeEach(() => {
-    tcFind = tc.find as jest.Mock;
+    tcFind = jest.spyOn(tc, 'find');
     tcFind.mockImplementation(() => path.join('PyPy', '3.6.12', architecture));
 
-    spyDownloadTool = tc.downloadTool as jest.Mock;
+    spyDownloadTool = jest.spyOn(tc, 'downloadTool');
     spyDownloadTool.mockImplementation(() => path.join(tempDir, 'PyPy'));
 
-    spyExtractZip = tc.extractZip as jest.Mock;
+    spyExtractZip = jest.spyOn(tc, 'extractZip');
     spyExtractZip.mockImplementation(() => tempDir);
 
-    spyExtractTar = tc.extractTar as jest.Mock;
+    spyExtractTar = jest.spyOn(tc, 'extractTar');
     spyExtractTar.mockImplementation(() => tempDir);
 
-    infoSpy = core.info as jest.Mock;
+    infoSpy = jest.spyOn(core, 'info');
     infoSpy.mockImplementation(() => {});
 
-    warningSpy = core.warning as jest.Mock;
+    warningSpy = jest.spyOn(core, 'warning');
     warningSpy.mockImplementation(() => null);
 
-    debugSpy = core.debug as jest.Mock;
+    debugSpy = jest.spyOn(core, 'debug');
     debugSpy.mockImplementation(() => null);
 
     spyFsReadDir = jest.spyOn(fs, 'readdirSync');
-    spyFsReadDir.mockImplementation(() => ['PyPyTest'] as any);
+    spyFsReadDir.mockImplementation(() => ['PyPyTest']);
 
     spyFsWriteFile = jest.spyOn(fs, 'writeFileSync');
     spyFsWriteFile.mockImplementation(() => undefined);
 
     spyHttpClient = jest.spyOn(HttpClient.prototype, 'getJson');
     spyHttpClient.mockImplementation(
-      async (): Promise<ifm.TypedResponse<IPyPyManifestRelease[]>> => {
+      async (): Promise<ifm.ITypedResponse<IPyPyManifestRelease[]>> => {
         const result = JSON.stringify(manifestData);
         return {
           statusCode: 200,
@@ -331,7 +275,7 @@ describe('installPyPy', () => {
       }
     );
 
-    spyExec = exec.exec as jest.Mock;
+    spyExec = jest.spyOn(exec, 'exec');
     spyExec.mockImplementation(() => undefined);
 
     spySymlinkSync = jest.spyOn(fs, 'symlinkSync');
@@ -360,7 +304,7 @@ describe('installPyPy', () => {
   });
 
   it('found and install PyPy', async () => {
-    spyCacheDir = tc.cacheDir as jest.Mock;
+    spyCacheDir = jest.spyOn(tc, 'cacheDir');
     spyCacheDir.mockImplementation(() =>
       path.join(toolDir, 'PyPy', '3.6.12', architecture)
     );
@@ -384,7 +328,7 @@ describe('installPyPy', () => {
   });
 
   it('found and install PyPy, pre-release fallback', async () => {
-    spyCacheDir = tc.cacheDir as jest.Mock;
+    spyCacheDir = jest.spyOn(tc, 'cacheDir');
     spyCacheDir.mockImplementation(() =>
       path.join(toolDir, 'PyPy', '3.6.12', architecture)
     );

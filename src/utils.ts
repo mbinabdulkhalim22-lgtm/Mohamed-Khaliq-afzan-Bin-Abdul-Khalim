@@ -1,4 +1,4 @@
-/* eslint no-unsafe-finally: "off" */
+/ //* eslint no-unsafe-finally: "off" */
 import * as cache from '@actions/cache';
 import * as core from '@actions/core';
 import fs from 'fs';
@@ -6,9 +6,7 @@ import * as path from 'path';
 import * as semver from 'semver';
 import * as toml from '@iarna/toml';
 import * as exec from '@actions/exec';
-import * as ifm from '@actions/http-client/lib/interfaces';
-
-import * as http from 'http';
+import * as ifm from '@actions/http-client/interfaces';
 
 export const IS_WINDOWS = process.platform === 'win32';
 export const IS_LINUX = process.platform === 'linux';
@@ -116,13 +114,7 @@ export function isGhes(): boolean {
   const ghUrl = new URL(
     process.env['GITHUB_SERVER_URL'] || 'https://github.com'
   );
-
-  const hostname = ghUrl.hostname.trimEnd().toUpperCase();
-  const isGitHubHost = hostname === 'GITHUB.COM';
-  const isGitHubEnterpriseCloudHost = hostname.endsWith('.GHE.COM');
-  const isLocalHost = hostname.endsWith('.LOCALHOST');
-
-  return !isGitHubHost && !isGitHubEnterpriseCloudHost && !isLocalHost;
+  return ghUrl.hostname.toUpperCase() !== 'GITHUB.COM';
 }
 
 export function isCacheFeatureAvailable(): boolean {
@@ -173,38 +165,15 @@ async function getMacOSInfo() {
 }
 
 export async function getLinuxInfo() {
-  try {
-    const {stdout} = await exec.getExecOutput(
-      'lsb_release',
-      ['-i', '-r', '-s'],
-      {
-        silent: true
-      }
-    );
+  const {stdout} = await exec.getExecOutput('lsb_release', ['-i', '-r', '-s'], {
+    silent: true
+  });
 
-    const [osName, osVersion] = stdout.trim().split('\n');
-    core.debug(`OS Name: ${osName}, Version: ${osVersion}`);
-    return {osName, osVersion};
-  } catch (err) {
-    core.debug(
-      `lsb_release failed (${(err as Error).message}). Falling back to /etc/os-release.`
-    );
+  const [osName, osVersion] = stdout.trim().split('\n');
 
-    const osReleaseContent = fs.readFileSync('/etc/os-release', 'utf8');
-    const osInfo: {[key: string]: string} = {};
+  core.debug(`OS Name: ${osName}, Version: ${osVersion}`);
 
-    osReleaseContent.split('\n').forEach(line => {
-      const [key, value] = line.split('=');
-      if (key && value) {
-        osInfo[key.trim()] = value.trim().replace(/"/g, '');
-      }
-    });
-
-    const osName = osInfo['ID'] || 'Linux';
-    const osVersion = osInfo['VERSION_ID'] || '';
-    core.debug(`OS Name: ${osName}, Version: ${osVersion}`);
-    return {osName, osVersion};
-  }
+  return {osName: osName, osVersion: osVersion};
 }
 
 export async function getOSInfo() {
@@ -251,14 +220,11 @@ function extractValue(obj: any, keys: string[]): string | undefined {
  * If none is present, returns an empty list.
  */
 export function getVersionInputFromTomlFile(versionFile: string): string[] {
-  core.debug(`Trying to resolve version from ${versionFile}`);
+  core.debug(`Trying to resolve version form ${versionFile}`);
 
-  let pyprojectFile = fs.readFileSync(versionFile, 'utf8');
-  // Normalize the line endings in the pyprojectFile
-  pyprojectFile = pyprojectFile.replace(/\r\n/g, '\n');
-
+  const pyprojectFile = fs.readFileSync(versionFile, 'utf8');
   const pyprojectConfig = toml.parse(pyprojectFile);
-  let keys: string[] = [];
+  let keys = [];
 
   if ('project' in pyprojectConfig) {
     // standard project metadata (PEP 621)
@@ -267,7 +233,7 @@ export function getVersionInputFromTomlFile(versionFile: string): string[] {
     // python poetry
     keys = ['tool', 'poetry', 'dependencies', 'python'];
   }
-  const versions: string[] = [];
+  const versions = [];
   const version = extractValue(pyprojectConfig, keys);
   if (version !== undefined) {
     versions.push(version);
@@ -292,117 +258,28 @@ export function getVersionInputFromTomlFile(versionFile: string): string[] {
 }
 
 /**
- * Python versions extracted from a plain text file.
- * - Resolves multiple versions from multiple lines.
- * - Handles pyenv-virtualenv pointers (e.g. `3.10/envs/virtualenv`).
- * - Ignores empty lines and lines starting with `#`
- * - Trims whitespace.
+ * Python version extracted from a plain text file.
  */
-export function getVersionsInputFromPlainFile(versionFile: string): string[] {
-  core.debug(`Trying to resolve versions from ${versionFile}`);
-  const content = fs.readFileSync(versionFile, 'utf8').trim();
-  const lines = content.split(/\r\n|\r|\n/);
-  const versions = lines
-    .map(line => {
-      if (line.startsWith('#') || line.trim() === '') {
-        return undefined;
-      }
-      let version: string = line.trim();
-      version = version.split('/')[0];
-      return version;
-    })
-    .filter(version => version !== undefined) as string[];
-  core.info(`Resolved ${versionFile} as ${versions.join(', ')}`);
-  return versions;
+export function getVersionInputFromPlainFile(versionFile: string): string[] {
+  core.debug(`Trying to resolve version form ${versionFile}`);
+  const version = fs.readFileSync(versionFile, 'utf8').trim();
+  core.info(`Resolved ${versionFile} as ${version}`);
+  return [version];
 }
 
 /**
- * Python version extracted from a .tool-versions file.
- */
-export function getVersionInputFromToolVersions(versionFile: string): string[] {
-  if (!fs.existsSync(versionFile)) {
-    core.warning(`File ${versionFile} does not exist.`);
-    return [];
-  }
-
-  try {
-    const fileContents = fs.readFileSync(versionFile, 'utf8');
-    const lines = fileContents.split('\n');
-
-    for (const line of lines) {
-      // Skip commented lines
-      if (line.trim().startsWith('#')) {
-        continue;
-      }
-      const match = line.match(/^\s*python\s*v?\s*(?<version>[^\s]+)\s*$/);
-      if (match) {
-        return [match.groups?.version.trim() || ''];
-      }
-    }
-
-    core.warning(`No Python version found in ${versionFile}`);
-
-    return [];
-  } catch (error) {
-    core.error(`Error reading ${versionFile}: ${(error as Error).message}`);
-    return [];
-  }
-}
-
-/**
- * Python version extracted from the Pipfile file.
- */
-export function getVersionInputFromPipfileFile(versionFile: string): string[] {
-  core.debug(`Trying to resolve version from ${versionFile}`);
-
-  if (!fs.existsSync(versionFile)) {
-    core.warning(`File ${versionFile} does not exist.`);
-    return [];
-  }
-  let pipfileFile = fs.readFileSync(versionFile, 'utf8');
-  // Normalize the line endings in the pipfileFile
-  pipfileFile = pipfileFile.replace(/\r\n/g, '\n');
-
-  const pipfileConfig = toml.parse(pipfileFile);
-  const keys = ['requires'];
-
-  if (!('requires' in pipfileConfig)) {
-    core.warning(`No Python version found in ${versionFile}`);
-    return [];
-  }
-  if ('python_full_version' in (pipfileConfig['requires'] as toml.JsonMap)) {
-    // specifies a full python version
-    keys.push('python_full_version');
-  } else {
-    keys.push('python_version');
-  }
-  const versions: string[] = [];
-  const version = extractValue(pipfileConfig, keys);
-  if (version !== undefined) {
-    versions.push(version);
-  }
-
-  core.info(`Extracted ${versions} from ${versionFile}`);
-  return versions;
-}
-
-/**
- * Python version extracted from a plain, .tool-versions, Pipfile or TOML file.
+ * Python version extracted from a plain or TOML file.
  */
 export function getVersionInputFromFile(versionFile: string): string[] {
   if (versionFile.endsWith('.toml')) {
     return getVersionInputFromTomlFile(versionFile);
-  } else if (versionFile.match('.tool-versions')) {
-    return getVersionInputFromToolVersions(versionFile);
-  } else if (versionFile.match('Pipfile')) {
-    return getVersionInputFromPipfileFile(versionFile);
   } else {
-    return getVersionsInputFromPlainFile(versionFile);
+    return getVersionInputFromPlainFile(versionFile);
   }
 }
 
 /**
- * Get the directory containing interpreter binary from installation directory of PyPy
+ * Get the directory containing interpreter binary from installation directory of PyPy or GraalPy
  *  - On Linux and macOS, the Python interpreter is in 'bin'.
  *  - On Windows, it is in the installation root.
  */
@@ -413,8 +290,8 @@ export function getBinaryDirectory(installDir: string) {
 /**
  * Extract next page URL from a HTTP response "link" header. Such headers are used in GitHub APIs.
  */
-export function getNextPageUrl<T>(response: ifm.TypedResponse<T>) {
-  const responseHeaders = <http.OutgoingHttpHeaders>response.headers;
+export function getNextPageUrl<T>(response: ifm.ITypedResponse<T>) {
+  const responseHeaders = <ifm.IHeaders>response.headers;
   const linkHeader = responseHeaders.link;
   if (typeof linkHeader === 'string') {
     for (const link of linkHeader.split(/\s*,\s*/)) {
@@ -430,18 +307,4 @@ export function getNextPageUrl<T>(response: ifm.TypedResponse<T>) {
     }
   }
   return null;
-}
-
-/**
- * Add temporary fix for Windows
- * On Windows, it is necessary to retain the .zip extension for proper extraction.
- * because the tc.extractZip() failure due to tc.downloadTool() not adding .zip extension.
- * Related issue: https://github.com/actions/toolkit/issues/1179
- * Related issue: https://github.com/actions/setup-python/issues/819
- */
-export function getDownloadFileName(downloadUrl: string): string | undefined {
-  const tempDir = process.env.RUNNER_TEMP || '.';
-  return IS_WINDOWS
-    ? path.join(tempDir, path.basename(downloadUrl))
-    : undefined;
 }

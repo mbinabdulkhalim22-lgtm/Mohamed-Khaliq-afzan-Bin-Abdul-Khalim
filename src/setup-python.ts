@@ -1,20 +1,18 @@
 import * as core from '@actions/core';
-import * as finder from './find-python.js';
-import * as finderPyPy from './find-pypy.js';
-import * as finderGraalPy from './find-graalpy.js';
-import {isMirrorCustomized} from './install-python.js';
+import * as finder from './find-python';
+import * as finderPyPy from './find-pypy';
+import * as finderGraalPy from './find-graalpy';
 import * as path from 'path';
 import * as os from 'os';
-import {fileURLToPath} from 'url';
 import fs from 'fs';
-import {getCacheDistributor} from './cache-distributions/cache-factory.js';
+import {getCacheDistributor} from './cache-distributions/cache-factory';
 import {
   isCacheFeatureAvailable,
   logWarning,
   IS_MAC,
   getVersionInputFromFile,
-  getVersionsInputFromPlainFile
-} from './utils.js';
+  getVersionInputFromPlainFile
+} from './utils';
 
 function isPyPyVersion(versionSpec: string) {
   return versionSpec.startsWith('pypy');
@@ -22,21 +20,6 @@ function isPyPyVersion(versionSpec: string) {
 
 function isGraalPyVersion(versionSpec: string) {
   return versionSpec.startsWith('graalpy');
-}
-
-// `mirror` only redirects CPython distributions. PyPy and GraalPy resolve from
-// downloads.python.org and the GitHub releases API respectively, so warn rather
-// than let the input look like it applied. Only warns when the user actually
-// set a custom mirror: action.yml gives `mirror` a default, so a plain
-// getInput() check would fire on every pypy-*/graalpy-* run.
-function warnIfMirrorUnsupported(versionSpec: string) {
-  if (!isMirrorCustomized()) {
-    return;
-  }
-  const implementation = isPyPyVersion(versionSpec) ? 'PyPy' : 'GraalPy';
-  core.warning(
-    `The 'mirror' input only applies to CPython distributions and is ignored for ${implementation} ('${versionSpec}'), which is downloaded from its own upstream source.`
-  );
 }
 
 async function cacheDependencies(cache: string, pythonVersion: string) {
@@ -52,7 +35,7 @@ async function cacheDependencies(cache: string, pythonVersion: string) {
 
 function resolveVersionInputFromDefaultFile(): string[] {
   const couples: [string, (versionFile: string) => string[]][] = [
-    ['.python-version', getVersionsInputFromPlainFile]
+    ['.python-version', getVersionInputFromPlainFile]
   ];
   for (const [versionFile, _fn] of couples) {
     logWarning(
@@ -109,7 +92,6 @@ async function run() {
     const versions = resolveVersionInput();
     const checkLatest = core.getBooleanInput('check-latest');
     const allowPreReleases = core.getBooleanInput('allow-prereleases');
-    const freethreaded = core.getBooleanInput('freethreaded');
 
     if (versions.length) {
       let pythonVersion = '';
@@ -118,7 +100,6 @@ async function run() {
       core.startGroup('Installed versions');
       for (const version of versions) {
         if (isPyPyVersion(version)) {
-          warnIfMirrorUnsupported(version);
           const installed = await finderPyPy.findPyPyVersion(
             version,
             arch,
@@ -131,7 +112,6 @@ async function run() {
             `Successfully set up PyPy ${installed.resolvedPyPyVersion} with Python (${installed.resolvedPythonVersion})`
           );
         } else if (isGraalPyVersion(version)) {
-          warnIfMirrorUnsupported(version);
           const installed = await finderGraalPy.findGraalPyVersion(
             version,
             arch,
@@ -152,8 +132,7 @@ async function run() {
             arch,
             updateEnvironment,
             checkLatest,
-            allowPreReleases,
-            freethreaded
+            allowPreReleases
           );
           pythonVersion = installed.version;
           core.info(`Successfully set up ${installed.impl} (${pythonVersion})`);
@@ -169,11 +148,7 @@ async function run() {
         'The `python-version` input is not set.  The version of Python currently in `PATH` will be used.'
       );
     }
-    const matchersPath = path.join(
-      path.dirname(fileURLToPath(import.meta.url)),
-      '../..',
-      '.github'
-    );
+    const matchersPath = path.join(__dirname, '../..', '.github');
     core.info(`##[add-matcher]${path.join(matchersPath, 'python.json')}`);
   } catch (err) {
     core.setFailed((err as Error).message);

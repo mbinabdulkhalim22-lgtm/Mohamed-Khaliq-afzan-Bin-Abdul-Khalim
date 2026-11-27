@@ -1,21 +1,14 @@
-import * as core from '@actions/core';
+ import * as core from '@actions/core';
 import * as cache from '@actions/cache';
 
 import fs from 'fs';
-import {State} from './cache-distributions/cache-distributor.js';
+import {State} from './cache-distributions/cache-distributor';
 
-// Added early exit to resolve issue with slow post action step:
-// - https://github.com/actions/setup-node/issues/878
-// https://github.com/actions/cache/pull/1217
-export async function run(earlyExit?: boolean) {
+export async function run() {
   try {
     const cache = core.getInput('cache');
     if (cache) {
       await saveCache(cache);
-
-      if (earlyExit) {
-        process.exit(0);
-      }
     }
   } catch (error) {
     const err = error as Error;
@@ -38,12 +31,11 @@ async function saveCache(packageManager: string) {
   core.debug(`paths for caching are ${cachePaths.join(', ')}`);
 
   if (!isCacheDirectoryExists(cachePaths)) {
-    core.warning(
+    throw new Error(
       `Cache folder path is retrieved for ${packageManager} but doesn't exist on disk: ${cachePaths.join(
         ', '
-      )}. This likely indicates that there are no dependencies to cache. Consider removing the cache step if it is not needed.`
+      )}`
     );
-    return;
   }
 
   const primaryKey = core.getState(State.STATE_CACHE_PRIMARY_KEY);
@@ -70,11 +62,7 @@ async function saveCache(packageManager: string) {
     return;
   }
 
-  if (cacheId === -1) {
-    // saveCache returns -1 without throwing when the cache was not saved, e.g.
-    // a reserve collision or a read-only token (fork PR). @actions/cache has
-    // already logged the reason at the appropriate severity, so just trace it.
-    core.debug(`Cache was not saved for the key: ${primaryKey}`);
+  if (cacheId == -1) {
     return;
   }
   core.info(`Cache saved with the key: ${primaryKey}`);
@@ -88,4 +76,4 @@ function isCacheDirectoryExists(cacheDirectory: string[]) {
   return result;
 }
 
-run(true);
+run();
