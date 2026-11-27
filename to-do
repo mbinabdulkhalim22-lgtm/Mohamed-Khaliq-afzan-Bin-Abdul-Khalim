@@ -1,0 +1,9 @@
+POST /register
+{
+  "name": "John Doe",
+  "email": "john@doe.com",
+  "password": "password"
+}
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+}
